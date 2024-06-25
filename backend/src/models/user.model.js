@@ -1,6 +1,14 @@
 import mongoose, { Schema } from "mongoose";
 import bcrypt from "bcrypt";
-import { ApiError } from "../utils/apiError";
+import jwt from "jsonwebtoken";
+import { ApiError } from "../utils/ApiError.js";
+
+const ROLES = {
+  USER: "user",
+  ADMIN: "admin",
+  MODERATOR: "moderator",
+  // Add more roles as needed
+};
 
 const userSchema = new Schema(
   {
@@ -22,7 +30,16 @@ const userSchema = new Schema(
       required: [true, "Password is required"],
       minlength: [6, "Password must be at least 6 characters long"],
     },
-    profilePicture: {
+    fullName: {
+      type: String,
+      required: [true, "Full Name is required"],
+    },
+    role: {
+      type: String,
+      enum: Object.values(ROLES),
+      default: ROLES.USER,
+    },
+    avatar: {
       type: String,
       default: "default_profile_pic.jpg",
     },
@@ -35,22 +52,24 @@ const userSchema = new Schema(
       type: Boolean,
       default: false,
     },
+    refreshToken: {
+      type: String,
+    },
   },
   { timestamps: true }
 );
 
-// Hash the password before saving the user model
 userSchema.pre("save", async function (next) {
   try {
     if (!this.isModified("password")) return next();
     this.password = await bcrypt.hash(this.password, 10);
     next();
   } catch (error) {
-    next(new ApiError("Cannot save password", 500));
+    const apiError = new ApiError("Cannot Save Password", 500);
+    next(apiError);
   }
 });
 
-// Compare passwords
 userSchema.methods.comparePassword = async function (userPassword) {
   try {
     return await bcrypt.compare(userPassword, this.password);
@@ -59,20 +78,40 @@ userSchema.methods.comparePassword = async function (userPassword) {
   }
 };
 
-// Convert mongoose documents to JSON and hide sensitive data
-userSchema.methods.toJSON = function () {
-  const obj = this.toObject();
-  delete obj.password;
-  delete obj.__v;
-  return obj;
+userSchema.methods.generateAccessToken = function () {
+  try {
+    return jwt.sign(
+      {
+        _id: this._id,
+        username: this.username,
+        fullName: this.fullName,
+        email: this.email,
+        role: this.role,
+      },
+      process.env.ACCESS_TOKEN_SECRET,
+      { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }
+    );
+  } catch (error) {
+    console.error("Error while generating Access Token", error);
+    throw new ApiError("Error while genreation Access Token", 500);
+  }
 };
 
-// Set user online status
-userSchema.methods.setOnline = function (online) {
-  this.online = online;
-  return this.save();
+userSchema.methods.generateRefreshToken = function () {
+  try {
+    return jwt.sign(
+      {
+        _id: this._id,
+      },
+      process.env.REFRESH_TOKEN_SECRET,
+      { expiresIn: process.env.REFRESH_TOKEN_EXPIRY }
+    );
+  } catch (error) {
+    console.error("Error while generating Refresh Token", error);
+    throw new ApiError("Error while genreation Refresh Token", 500);
+  }
 };
 
 const User = mongoose.model("User", userSchema);
 
-export default User;
+export { User };

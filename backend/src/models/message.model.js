@@ -45,13 +45,6 @@ messageSchema.methods.updateStatus = async function (status) {
   return this.save();
 };
 
-// Method to format the message object for JSON response
-messageSchema.methods.toJSON = function () {
-  const obj = this.toObject();
-  delete obj.__v;
-  return obj;
-};
-
 // Add compound index for better query performance
 messageSchema.index({ sender: 1, receiver: 1, timestamp: -1 });
 
